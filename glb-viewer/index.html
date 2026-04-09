@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GLB Viewer</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d10;
+        --panel: rgba(10, 12, 16, 0.72);
+        --border: rgba(255, 255, 255, 0.12);
+        --text: #f3f5f7;
+        --muted: rgba(243, 245, 247, 0.72);
+        --accent: #7aa2ff;
+        --danger: #ff8f8f;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      #app { position: relative; width: 100%; height: 100%; }
+      #canvas { width: 100%; height: 100%; display: block; }
+      .hud {
+        position: absolute;
+        left: 16px;
+        top: 16px;
+        width: min(380px, calc(100% - 32px));
+        padding: 14px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+        border-radius: 14px;
+        z-index: 10;
+      }
+      .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+      .row:first-child { margin-top: 0; }
+      .label { font-size: 13px; color: var(--muted); }
+      .value { font-size: 13px; }
+      .progress { margin-top: 10px; width: 100%; height: 8px; appearance: none; }
+      .progress::-webkit-progress-bar { background: rgba(255, 255, 255, 0.08); border-radius: 999px; }
+      .progress::-webkit-progress-value { background: linear-gradient(90deg, #6ea8fe, #9a7cff); border-radius: 999px; }
+      .status { margin-top: 8px; font-size: 13px; color: var(--muted); }
+      .controls { margin-top: 12px; display: grid; gap: 10px; }
+      .control { display: grid; gap: 6px; }
+      .control input[type="range"] { width: 100%; }
+      .toggle { display: flex; align-items: center; gap: 8px; }
+      .error { color: var(--danger); }
+      .hint {
+        position: absolute;
+        right: 16px;
+        bottom: 16px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+        color: var(--muted);
+        font-size: 12px;
+        z-index: 10;
+      }
+      .dropzone {
+        position: absolute;
+        inset: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        border: 1.5px dashed rgba(255, 255, 255, 0.18);
+        border-radius: 20px;
+        background: rgba(5, 7, 10, 0.26);
+        backdrop-filter: blur(10px);
+        z-index: 8;
+        transition: 160ms ease;
+      }
+      .dropzone.hidden { opacity: 0; pointer-events: none; }
+      .dropzone.dragover {
+        border-color: rgba(122, 162, 255, 0.95);
+        background: rgba(60, 88, 148, 0.16);
+        transform: scale(0.995);
+      }
+      .drop-inner {
+        max-width: 520px;
+        text-align: center;
+      }
+      .drop-title { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+      .drop-desc { color: var(--muted); line-height: 1.5; font-size: 14px; }
+      .drop-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 16px; }
+      .btn {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.06);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 10px 14px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .btn.primary { background: linear-gradient(90deg, #5d7dff, #9c72ff); border: none; }
+      .files { margin-top: 10px; display: grid; gap: 8px; }
+      .file-chip {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.06);
+        font-size: 12px;
+      }
+      .small { font-size: 12px; color: var(--muted); }
+      input[type="file"] { display: none; }
+      a { color: #9fc0ff; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="canvas"></canvas>
+
+      <div id="dropzone" class="dropzone">
+        <div class="drop-inner">
+          <div class="drop-title">Drop a GLB character here</div>
+          <div class="drop-desc">
+            Drag and drop a <strong>.glb</strong> model to preview it instantly in the browser.<br />
+            You can also load a custom <strong>.hdr</strong> environment map.
+          </div>
+          <div class="drop-actions">
+            <button id="pickModelBtn" class="btn primary" type="button">Choose GLB</button>
+            <button id="pickHdrBtn" class="btn" type="button">Choose HDRI</button>
+          </div>
+          <div class="files">
+            <div class="file-chip"><span>Model</span><span id="modelFileName">assets/model.glb</span></div>
+            <div class="file-chip"><span>Environment</span><span id="hdrFileName">assets/hdri.hdr</span></div>
+          </div>
+          <div class="small" style="margin-top: 12px;">Tip: drop both files together or swap them one by one.</div>
+        </div>
+      </div>
+
+      <div class="hud">
+        <div class="row">
+          <div>
+            <div style="font-size: 16px; font-weight: 700">GLB Viewer</div>
+            <div class="label">Three.js + GLTFLoader + RGBELoader</div>
+          </div>
+        </div>
+
+        <progress id="progress" class="progress" max="100" value="0"></progress>
+        <div id="status" class="status">Preparing scene…</div>
+
+        <div class="controls">
+          <label class="toggle">
+            <input id="bgToggle" type="checkbox" checked />
+            <span class="value">Background visible</span>
+          </label>
+
+          <label class="toggle">
+            <input id="shadowToggle" type="checkbox" checked />
+            <span class="value">Shadows</span>
+          </label>
+
+          <label class="toggle">
+            <input id="autoRotateToggle" type="checkbox" />
+            <span class="value">Auto rotate</span>
+          </label>
+
+          <div class="control">
+            <div class="row">
+              <span class="label">Light intensity</span>
+              <span id="lightValue" class="value">2.0</span>
+            </div>
+            <input id="lightRange" type="range" min="0" max="5" step="0.1" value="2" />
+          </div>
+
+          <div class="control">
+            <div class="row">
+              <span class="label">Exposure</span>
+              <span id="exposureValue" class="value">1.0</span>
+            </div>
+            <input id="exposureRange" type="range" min="0.2" max="2.5" step="0.1" value="1" />
+          </div>
+
+          <div class="control">
+            <div class="row">
+              <span class="label">Environment intensity</span>
+              <span id="envValue" class="value">1.0</span>
+            </div>
+            <input id="envRange" type="range" min="0" max="3" step="0.1" value="1" />
+          </div>
+
+          <div class="row">
+            <button id="resetCameraBtn" class="btn" type="button">Reset camera</button>
+            <button id="clearModelBtn" class="btn" type="button">Clear model</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hint">Drag to orbit · Wheel / pinch to zoom · Drop GLB/HDR on screen</div>
+      <input id="modelInput" type="file" accept=".glb,model/gltf-binary" />
+      <input id="hdrInput" type="file" accept=".hdr,.exr" />
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
